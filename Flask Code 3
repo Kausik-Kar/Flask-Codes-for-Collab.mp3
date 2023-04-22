@@ -1,0 +1,74 @@
+from flask import Flask, request, jsonify
+from spotipy.oauth2 import SpotifyOAuth
+import spotipy
+import pandas as pd
+import math
+from scipy.spatial import distance
+from sklearn.cluster import KMeans
+
+# Flask app
+app = Flask(__name__)
+
+# Spotify API credentials
+client_id = "YOUR_CLIENT_ID"
+client_secret = "YOUR_CLIENT_SECRET"
+redirect_uri = "http://localhost:9000"
+scope = "user-library-read,user-read-playback-state"
+
+# Spotipy API access
+sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=client_id, 
+                                               client_secret=client_secret,
+                                               redirect_uri=redirect_uri, 
+                                               scope=scope, 
+                                               open_browser=True))
+
+# Load dataset
+data = pd.read_csv("spotify_features.csv")
+
+# Routes
+@app.route('/recommend', methods=['POST'])
+def recommend():
+    # Get current song features
+    playing = sp.current_playback()
+    play_df = pd.DataFrame(sp.audio_features(playing['item']['id']))
+    play_features = [play_df.iloc[0]['acousticness'], play_df.iloc[0]['energy']]
+    
+    # Cluster the dataset and determine the cluster of the current song
+    X = data.iloc[:, [5, 8]].values
+    kmeans = KMeans(n_clusters=3, init='k-means++', random_state=0)     
+    Y = kmeans.fit_predict(X)
+    current_cluster = cal_cluster(play_features, X, Y, kmeans)
+    
+    # Get 5 recommended songs from the same cluster
+    recommended_songs = get_recommendations(current_cluster, play_features, X, Y, data)
+    
+    # Return the recommended songs in JSON format
+    return jsonify({'recommended_songs': recommended_songs})
+
+# Helper functions
+def cal_cluster(play_features, X, Y, kmeans):
+    dist = []
+    for i in range(len(kmeans.cluster_centers_)):
+        dist.append(distance.euclidean(kmeans.cluster_centers_[i], play_features))
+    return pd.Series(dist).idxmin()
+
+def get_recommendations(current_cluster, play_features, X, Y, data):
+    eDist=[]
+    for i in range(len(X[Y == current_cluster])):
+        eDistance = math.dist(play_features, X[Y == current_cluster][i])
+        eDist.append(eDistance)
+
+    eDist2 = []
+    eDist2.extend(eDist)
+    eDist2.sort()
+    recommended_songs = []
+    for i in range(5):
+        num = eDist.index(eDist2[i])
+        arr = data.loc[(data['energy'] == X[Y == current_cluster][num][1]) & (data['acousticness'] == X[Y == current_cluster][num][0])]
+        arr = arr.values.flatten().tolist()
+        recommended_songs.append({'song_name': arr[2], 'artist_name': arr[1]})
+    return recommended_songs
+
+# Run the app
+if __name__ == '__main__':
+    app.run(debug=True)
