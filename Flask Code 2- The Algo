@@ -1,0 +1,37 @@
+# configure the Spotify credentials
+client_id = 'your_client_id'
+client_secret = 'your_client_secret'
+
+# authenticate the application
+client_credentials_manager = SpotifyClientCredentials(client_id, client_secret)
+sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
+
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        query = request.form['query']
+        results = sp.search(q=query, type='track')
+        tracks = results['tracks']['items']
+
+        # get the top 10 recommended songs
+        recommended_songs = []
+        for track in tracks:
+            song_id = track['id']
+            song_name = track['name']
+            artist_name = track['artists'][0]['name']
+
+            try:
+                rating = algo.predict(uid='user', iid=song_id).est
+            except:
+                rating = 0.0
+
+            recommended_songs.append({'id': song_id, 'name': song_name, 'artist': artist_name, 'rating': rating})
+
+        recommended_songs = sorted(recommended_songs, key=lambda k: k['rating'], reverse=True)[:10]
+
+        return jsonify(recommended_songs)
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
