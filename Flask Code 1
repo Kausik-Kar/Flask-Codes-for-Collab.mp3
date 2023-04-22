@@ -1,0 +1,54 @@
+from flask import Flask, request, jsonify
+import requests
+import json
+
+app = Flask(__name__)
+
+client_id = '6b64fd0fab3844329dbd75ba015167dd'
+client_secret = 'fdf2f7f509414a55a7c9fa2528a3892d'
+
+CLIENT_ID = client_id
+CLIENT_SECRET = client_secret
+AUTH_URL = 'https://accounts.spotify.com/api/token'
+SEARCH_URL = 'https://api.spotify.com/v1/search'
+
+
+def get_token():
+    payload = {'grant_type': 'client_credentials'}
+    auth = requests.post(AUTH_URL, auth=(CLIENT_ID, CLIENT_SECRET), data=payload)
+    token = json.loads(auth.text)['access_token']
+    return token
+
+
+def search_songs(query, token):
+    headers = {'Authorization': 'Bearer ' + token}
+    params = {'q': query, 'type': 'track'}
+    response = requests.get(SEARCH_URL, headers=headers, params=params)
+    songs = json.loads(response.text)['tracks']['items']
+    return songs
+
+def get_recommended_songs(seed_artists, seed_tracks, token):
+    headers = {'Authorization': 'Bearer ' + token}
+    params = {'seed_artists': seed_artists, 'seed_tracks': seed_tracks, 'limit': 10}
+    response = requests.get('https://api.spotify.com/v1/recommendations', headers=headers, params=params)
+    recommended_songs = json.loads(response.text)['tracks']
+    return recommended_songs
+
+@app.route('/recommend', methods=['POST'])
+def recommend_songs():
+    query = request.json['query']
+
+    token = get_token()
+
+    songs = search_songs(query, token)
+
+    seed_artists = ','.join([song['artists'][0]['id'] for song in songs])
+    seed_tracks = ','.join([song['id'] for song in songs])
+
+    recommended_songs = get_recommended_songs(seed_artists, seed_tracks, token)
+
+    # Return the recommended songs in JSON format
+    return jsonify(recommended_songs)
+
+if __name__ == '_main_':
+    app.run(debug=True)
